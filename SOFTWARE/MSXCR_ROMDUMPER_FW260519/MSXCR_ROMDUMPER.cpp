@@ -67,6 +67,7 @@ typedef struct {
 
 typedef struct {
     std::string title;
+    std::string system;
     std::string company;
     std::string year;
     std::string sha1;
@@ -434,8 +435,9 @@ static bool FindROMInfoBySha1(const std::wstring& xmlPath, const std::string& ta
 
         std::string softwareBlock = xmlText.substr(start, end - start);
 
-        std::string title, company, year;
+        std::string title, system, company, year;
         ExtractFirstElement(softwareBlock, "title", title);
+        ExtractFirstElement(softwareBlock, "system", system);
         ExtractFirstElement(softwareBlock, "company", company);
         ExtractFirstElement(softwareBlock, "year", year);
 
@@ -457,6 +459,7 @@ static bool FindROMInfoBySha1(const std::wstring& xmlPath, const std::string& ta
                 if (sha1 == target)
                 {
                     info->title = title;
+                    info->system = system;
                     info->company = company;
                     info->year = year;
                     info->sha1 = sha1;
@@ -2558,6 +2561,7 @@ struct ROM_DB_INFO_EX
 {
     bool found;
     std::string title;
+    std::string system;
     std::string company;
     std::string year;
     std::string status;
@@ -2653,6 +2657,7 @@ bool FindROMInfoBySha1FromSoftwareDB(const std::wstring& xmlPath, const std::str
 
     dbInfo->found = false;
     dbInfo->title.clear();
+    dbInfo->system.clear();
     dbInfo->company.clear();
     dbInfo->year.clear();
     dbInfo->status.clear();
@@ -2700,6 +2705,7 @@ bool FindROMInfoBySha1FromSoftwareDB(const std::wstring& xmlPath, const std::str
                 {
                     dbInfo->found = true;
                     FindXMLAttributeValue(softwareTag, "title", dbInfo->title);
+                    FindXMLAttributeValue(softwareTag, "system", dbInfo->system);
                     FindXMLAttributeValue(softwareTag, "company", dbInfo->company);
                     FindXMLAttributeValue(softwareTag, "year", dbInfo->year);
                     FindXMLAttributeValue(romTag, "status", dbInfo->status);
@@ -2748,6 +2754,7 @@ bool FindROMInfoWithPriority(const std::string& sha1, ROM_DB_INFO_EX* dbInfo, st
 
         dbInfo->found = oldInfo.found;
         dbInfo->title = oldInfo.title;
+        dbInfo->system = oldInfo.system;
         dbInfo->company = oldInfo.company;
         dbInfo->year = oldInfo.year;
         dbInfo->status.clear();
@@ -2776,12 +2783,13 @@ bool IsIgnorableTagValue(const std::wstring& value)
 std::wstring BuildAutoFileName(const ROM_DB_INFO_EX& dbInfo)
 {
     std::wstring titleW = SanitizeFileName(Utf8ToWide(dbInfo.title));
+    std::wstring systemW = SanitizeFileName(Utf8ToWide(dbInfo.system));
     std::wstring companyW = SanitizeFileName(Utf8ToWide(dbInfo.company));
     std::wstring yearW = SanitizeFileName(Utf8ToWide(dbInfo.year));
     std::wstring statusW = SanitizeFileName(Utf8ToWide(dbInfo.status));
     std::wstring remarkW = SanitizeFileName(Utf8ToWide(dbInfo.remark));
 
-    std::wstring renamedFile = titleW + L"-" + companyW + L"(" + yearW + L")";
+    std::wstring renamedFile = titleW + L"(" + systemW + L")-" + companyW + L"(" + yearW + L")";
 
     if (!IsIgnorableTagValue(statusW))
         renamedFile += L"[" + statusW + L"]";
@@ -2970,6 +2978,7 @@ int ProcessROMRead(const wchar_t* outputFileArg, bool autoFileNameMode)
                 {
                     printf("\n========== DB MATCH ==========\n");
                     printf("Title  : %s\n", dbInfo.title.c_str());
+                    printf("System : %s\n", dbInfo.system.c_str());
                     printf("Company: %s\n", dbInfo.company.c_str());
                     printf("Year   : %s\n", dbInfo.year.c_str());
 
