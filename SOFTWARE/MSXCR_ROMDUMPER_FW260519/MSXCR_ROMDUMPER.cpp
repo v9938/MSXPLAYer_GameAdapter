@@ -916,8 +916,8 @@ static BOOL ReadHash5Match(HANDLE hSerial)
             {
                 printf("slotReadHash failed at try %d\n", i + 1);
                 return FALSE;
+            }
         }
-    }
 
 #ifdef DISPLAY_HASH
         printf("Hash(addr=%04lX) = %08lX, %08lX, %08lX, %08lX, %08lX\n",
@@ -944,7 +944,7 @@ static BOOL ReadHash5Match(HANDLE hSerial)
         }
 
         return TRUE;
-}
+	}
 
     return FALSE;
 }
@@ -2566,6 +2566,7 @@ struct ROM_DB_INFO_EX
     std::string year;
     std::string status;
     std::string remark;
+    bool has_different_system_duplicate;
 };
 
 bool FindXMLAttributeValue(const std::string& text, const std::string& key, std::string& value)
@@ -2662,11 +2663,13 @@ bool FindROMInfoBySha1FromSoftwareDB(const std::wstring& xmlPath, const std::str
     dbInfo->year.clear();
     dbInfo->status.clear();
     dbInfo->remark.clear();
+    dbInfo->has_different_system_duplicate = false;
 
     std::string xml;
     if (!LoadTextFileUTF8(xmlPath, xml))
         return false;
 
+    std::string matchedTitle, matchedSystem;
     size_t searchPos = 0;
     while (true)
     {
@@ -2710,14 +2713,57 @@ bool FindROMInfoBySha1FromSoftwareDB(const std::wstring& xmlPath, const std::str
                     FindXMLAttributeValue(softwareTag, "year", dbInfo->year);
                     FindXMLAttributeValue(romTag, "status", dbInfo->status);
                     FindXMLAttributeValue(romTag, "remark", dbInfo->remark);
-                    return true;
+                    
+                    matchedTitle = dbInfo->title;
+                    matchedSystem = dbInfo->system;
+                    break;
                 }
             }
 
             romSearchPos = romEnd + 2;
         }
 
+        if (dbInfo->found)
+            break;
+
         searchPos = softwareEnd + 11;
+    }
+
+    // 同じタイトルで異なる機種のデータが存在するかをチェック
+    if (dbInfo->found && !matchedTitle.empty() && !matchedSystem.empty())
+    {
+        searchPos = 0;
+        while (true)
+        {
+            size_t softwareStart = xml.find("<software ", searchPos);
+            if (softwareStart == std::string::npos)
+                break;
+
+            size_t softwareTagEnd = xml.find(">", softwareStart);
+            if (softwareTagEnd == std::string::npos)
+                break;
+
+            size_t softwareEnd = xml.find("</software>", softwareTagEnd);
+            if (softwareEnd == std::string::npos)
+                break;
+
+            std::string softwareTag = xml.substr(softwareStart, softwareTagEnd - softwareStart + 1);
+            std::string softwareBody = xml.substr(softwareTagEnd + 1, softwareEnd - softwareTagEnd - 1);
+
+            std::string title, system;
+            FindXMLAttributeValue(softwareTag, "title", title);
+            FindXMLAttributeValue(softwareTag, "system", system);
+
+            if (!title.empty() && !system.empty() &&
+                _stricmp(title.c_str(), matchedTitle.c_str()) == 0 &&
+                _stricmp(system.c_str(), matchedSystem.c_str()) != 0)
+            {
+                dbInfo->has_different_system_duplicate = true;
+                break;
+            }
+
+            searchPos = softwareEnd + 11;
+        }
     }
 
     return true;
@@ -2789,7 +2835,17 @@ std::wstring BuildAutoFileName(const ROM_DB_INFO_EX& dbInfo)
     std::wstring statusW = SanitizeFileName(Utf8ToWide(dbInfo.status));
     std::wstring remarkW = SanitizeFileName(Utf8ToWide(dbInfo.remark));
 
-    std::wstring renamedFile = titleW + L"(" + systemW + L")-" + companyW + L"(" + yearW + L")";
+    // タイトルが同じゲームで機種が異なる重複データがDBに存在する時だけシステム名をファイル名に追加
+    std::wstring renamedFile;
+    if (dbInfo.has_different_system_duplicate)
+    {
+        renamedFile = titleW + L"(" + systemW + L")-" + companyW + L"(" + yearW + L")";
+    }
+    else
+    {
+        // 重複がなければシステム名無し
+        renamedFile = titleW + L"-" + companyW + L"(" + yearW + L")";
+    }
 
     if (!IsIgnorableTagValue(statusW))
         renamedFile += L"[" + statusW + L"]";

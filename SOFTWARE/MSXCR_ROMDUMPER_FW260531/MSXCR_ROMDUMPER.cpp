@@ -75,6 +75,7 @@ typedef struct {
 
 typedef struct {
     std::string title;
+    std::string system;
     std::string company;
     std::string year;
     std::string sha1;
@@ -442,8 +443,9 @@ static bool FindROMInfoBySha1(const std::wstring& xmlPath, const std::string& ta
 
         std::string softwareBlock = xmlText.substr(start, end - start);
 
-        std::string title, company, year;
+        std::string title, system, company, year;
         ExtractFirstElement(softwareBlock, "title", title);
+        ExtractFirstElement(softwareBlock, "system", system);
         ExtractFirstElement(softwareBlock, "company", company);
         ExtractFirstElement(softwareBlock, "year", year);
 
@@ -465,6 +467,7 @@ static bool FindROMInfoBySha1(const std::wstring& xmlPath, const std::string& ta
                 if (sha1 == target)
                 {
                     info->title = title;
+                    info->system = system;
                     info->company = company;
                     info->year = year;
                     info->sha1 = sha1;
@@ -1115,7 +1118,7 @@ static BOOL ReadHash5Match(HANDLE hSerial)
         }
 
         return TRUE;
-}
+	}
 
     return FALSE;
 }
@@ -2653,10 +2656,12 @@ struct ROM_DB_INFO_EX
 {
     bool found;
     std::string title;
+    std::string system;
     std::string company;
     std::string year;
     std::string status;
     std::string remark;
+    bool has_different_system_duplicate;
 };
 
 bool FindXMLAttributeValue(const std::string& text, const std::string& key, std::string& value)
@@ -2748,15 +2753,18 @@ bool FindROMInfoBySha1FromSoftwareDB(const std::wstring& xmlPath, const std::str
 
     dbInfo->found = false;
     dbInfo->title.clear();
+    dbInfo->system.clear();
     dbInfo->company.clear();
     dbInfo->year.clear();
     dbInfo->status.clear();
     dbInfo->remark.clear();
+    dbInfo->has_different_system_duplicate = false;
 
     std::string xml;
     if (!LoadTextFileUTF8(xmlPath, xml))
         return false;
 
+    std::string matchedTitle, matchedSystem;
     size_t searchPos = 0;
     while (true)
     {
@@ -2795,18 +2803,62 @@ bool FindROMInfoBySha1FromSoftwareDB(const std::wstring& xmlPath, const std::str
                 {
                     dbInfo->found = true;
                     FindXMLAttributeValue(softwareTag, "title", dbInfo->title);
+                    FindXMLAttributeValue(softwareTag, "system", dbInfo->system);
                     FindXMLAttributeValue(softwareTag, "company", dbInfo->company);
                     FindXMLAttributeValue(softwareTag, "year", dbInfo->year);
                     FindXMLAttributeValue(romTag, "status", dbInfo->status);
                     FindXMLAttributeValue(romTag, "remark", dbInfo->remark);
-                    return true;
+                    
+                    matchedTitle = dbInfo->title;
+                    matchedSystem = dbInfo->system;
+                    break;
                 }
             }
 
             romSearchPos = romEnd + 2;
         }
 
+        if (dbInfo->found)
+            break;
+
         searchPos = softwareEnd + 11;
+    }
+
+    // 同じタイトルで異なる機種のデータが存在するかをチェック
+    if (dbInfo->found && !matchedTitle.empty() && !matchedSystem.empty())
+    {
+        searchPos = 0;
+        while (true)
+        {
+            size_t softwareStart = xml.find("<software ", searchPos);
+            if (softwareStart == std::string::npos)
+                break;
+
+            size_t softwareTagEnd = xml.find(">", softwareStart);
+            if (softwareTagEnd == std::string::npos)
+                break;
+
+            size_t softwareEnd = xml.find("</software>", softwareTagEnd);
+            if (softwareEnd == std::string::npos)
+                break;
+
+            std::string softwareTag = xml.substr(softwareStart, softwareTagEnd - softwareStart + 1);
+            std::string softwareBody = xml.substr(softwareTagEnd + 1, softwareEnd - softwareTagEnd - 1);
+
+            std::string title, system;
+            FindXMLAttributeValue(softwareTag, "title", title);
+            FindXMLAttributeValue(softwareTag, "system", system);
+
+            if (!title.empty() && !system.empty() &&
+                _stricmp(title.c_str(), matchedTitle.c_str()) == 0 &&
+                _stricmp(system.c_str(), matchedSystem.c_str()) != 0)
+            {
+                dbInfo->has_different_system_duplicate = true;
+                break;
+            }
+
+            searchPos = softwareEnd + 11;
+        }
     }
 
     return true;
@@ -2843,6 +2895,7 @@ bool FindROMInfoWithPriority(const std::string& sha1, ROM_DB_INFO_EX* dbInfo, st
 
         dbInfo->found = oldInfo.found;
         dbInfo->title = oldInfo.title;
+        dbInfo->system = oldInfo.system;
         dbInfo->company = oldInfo.company;
         dbInfo->year = oldInfo.year;
         dbInfo->status.clear();
@@ -2871,12 +2924,23 @@ bool IsIgnorableTagValue(const std::wstring& value)
 std::wstring BuildAutoFileName(const ROM_DB_INFO_EX& dbInfo)
 {
     std::wstring titleW = SanitizeFileName(Utf8ToWide(dbInfo.title));
+    std::wstring systemW = SanitizeFileName(Utf8ToWide(dbInfo.system));
     std::wstring companyW = SanitizeFileName(Utf8ToWide(dbInfo.company));
     std::wstring yearW = SanitizeFileName(Utf8ToWide(dbInfo.year));
     std::wstring statusW = SanitizeFileName(Utf8ToWide(dbInfo.status));
     std::wstring remarkW = SanitizeFileName(Utf8ToWide(dbInfo.remark));
 
-    std::wstring renamedFile = titleW + L"-" + companyW + L"(" + yearW + L")";
+    // タイトルが同じゲームで機種が異なる重複データがDBに存在する時だけシステム名をファイル名に追加
+    std::wstring renamedFile;
+    if (dbInfo.has_different_system_duplicate)
+    {
+        renamedFile = titleW + L"(" + systemW + L")-" + companyW + L"(" + yearW + L")";
+    }
+    else
+    {
+        // 重複がなければシステム名無し
+        renamedFile = titleW + L"-" + companyW + L"(" + yearW + L")";
+    }
 
     if (!IsIgnorableTagValue(statusW))
         renamedFile += L"[" + statusW + L"]";
@@ -3075,6 +3139,7 @@ int ProcessROMRead(const wchar_t* outputFileArg, bool autoFileNameMode)
                 {
                     printf("\n========== DB MATCH ==========\n");
                     printf("Title  : %s\n", dbInfo.title.c_str());
+                    printf("System : %s\n", dbInfo.system.c_str());
                     printf("Company: %s\n", dbInfo.company.c_str());
                     printf("Year   : %s\n", dbInfo.year.c_str());
 
