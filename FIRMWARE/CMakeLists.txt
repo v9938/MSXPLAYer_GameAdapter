@@ -28,7 +28,7 @@ set(PICO_BOARD weact_studio_rp2350b_core CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(MSXPLAYer_CR C CXX ASM)
+project(MSXPLAYer_CR VERSION 1.40 LANGUAGES C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
@@ -36,6 +36,9 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 cmake_minimum_required(VERSION 3.13)
+string(TIMESTAMP BUILD_DATE "%Y%m%d%H%M")
+
+
 
 add_executable(MSXPLAYer_CR)
 
@@ -83,4 +86,6 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
   PICO_DEFAULT_UART=0 # UART0なら0, UART1なら1
   PICO_DEFAULT_UART_TX_PIN=0 # TXピンのGP番号
   PICO_DEFAULT_UART_RX_PIN=1 # RXピンのGP番号
+  PROJECT_VERSION="${BUILD_DATE}"
+
 )

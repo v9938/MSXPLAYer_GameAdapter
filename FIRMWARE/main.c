@@ -27,6 +27,7 @@
 //  26/05/20 V1.21      MSX初期のROMカセットではアクセス速度が<180ns以上ものが散見されたので
 //                      読み込みタイミングを調整した
 //  26/05/28 v1.30      BS6101を採用したASCII3 ROMの動作不良対策で書き込み時のRD信号をPushPullに変更
+//  26/05/31 v1.40      HVERの表示変更、Megarom Read支援コマンドRMSET/RMRDを追加
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -68,6 +69,8 @@
 #include "boot/picoboot.h"
 #include "boot/picobin.h"
 #include "pwm_low_hiz.pio.h"  // コンパイル済みPIOプログラムヘッダ
+#include "pico/version.h" // SDKのバージョン情報
+
 
 #include "commands.h"                           // 別ファイルに分割したコマンドテーブル // commands.c 参照
 #include "ports.h"                              // 別ファイルに分割したボードピン定義 // ports.c 参照
@@ -230,6 +233,17 @@ const GPIO_PAIR gpio_pairs[] = {
 };
 
 const int NUM_GPIO_PAIRS = sizeof(gpio_pairs) / sizeof(GPIO_PAIR);
+
+// MEGAROM Mapperの設定値
+typedef struct {
+    bool megarom;            // 非MegaROM or MegaROM 
+    uint16_t mapSelAddress;  // MEGAROM Mapperの選択アドレス 
+    uint16_t romReadAddress; // Mapper Read Address
+    uint16_t romReadSize;    // Mapper Read size
+} MegaROM_Mapper;
+
+MegaROM_Mapper romMapper ;
+
 
 
 // MUTEX
@@ -1078,7 +1092,7 @@ int executeCommands(uint8_t *slotMem, size_t bufSize, uint16_t startAddress,uint
                 
             case 0x01:  // Read Memory
                  cmdResult = slotReadData(slot, address, &readData);
-                if (cmdResult == SUCCESS) {
+                if (cmdResult == CMD_OK) {
                     if (comdbgFlag) printf("%d: Read Memory %x:%x\n",i,address, readData);
                     execState.lastData = readData;
                 }
@@ -1086,7 +1100,7 @@ int executeCommands(uint8_t *slotMem, size_t bufSize, uint16_t startAddress,uint
                 
             case 0x02:  // Write Memory
                 cmdResult = slotWriteData(slot, address, data);
-                if (cmdResult == SUCCESS) {
+                if (cmdResult == CMD_OK) {
                     if (comdbgFlag) printf("%d: Write Memory %x:%x\n",i,address, data);
                     execState.lastData = data;
                 }
@@ -1094,7 +1108,7 @@ int executeCommands(uint8_t *slotMem, size_t bufSize, uint16_t startAddress,uint
                 
             case 0x03:  // Read IO
                 cmdResult = slotReadIO(address, &readData);
-                if (cmdResult == SUCCESS) {
+                if (cmdResult == CMD_OK) {
                     if (comdbgFlag) printf("%d: Read IO %x:%x\n",i,address, readData);
                     execState.lastData = readData;
                 }
@@ -1102,7 +1116,7 @@ int executeCommands(uint8_t *slotMem, size_t bufSize, uint16_t startAddress,uint
                 
             case 0x04:  // Write IO
                 cmdResult = slotWriteIO(address, data);
-                if (cmdResult == SUCCESS) {
+                if (cmdResult == CMD_OK) {
                     if (comdbgFlag) printf("%d: Write IO %x:%x\n",i,address, data);
                     execState.lastData = data;
                 }
@@ -1305,8 +1319,9 @@ int parse_hex_string(const char *s, int *val) {
 }
 
 int cmd_hwVersion(const Command_t* cmd) {
-   cdc_printf("%s\n%s\n",HW_NAME,HW_VERSION);      // ハード名/バージョン出力
-   cdc_printf("FIRMWARE DATE\n%s\n",__DATE__);     // ビルド日付出力
+   cdc_printf("HARDWARE NAME : %s\n",HW_NAME);      // ハード名/バージョン出力
+   cdc_printf("HARDWARE VER : %s\n",HW_VERSION);      // ハード名/バージョン出力
+   cdc_printf("FIRMWARE VER : %s\n",PROJECT_VERSION);     // Firmware Version
    return CMD_OK;                                  // 成功
 }
 // HW information              	HINF	cmd_hwInfomation    	HINF                                            	戻値: Hardware 情報   + OK    	Hardware Information
@@ -1863,8 +1878,89 @@ int cmd_slotReadTransferWithHash(const Command_t* cmd) {
     cdc_printf("%04x : %08x\n",length,hash);   // データサイズとHash値出力
     return CMD_OK;
 }
+// RMSET,[Mapper Selecter Address],[Bank Address],[Bank size]   (追加 V1.40～) Mega ROM Mapperの設定
+int cmd_romMapperSet(const Command_t* cmd) {
 
+    if (!z80AddressVaild(cmd->arg_val[0]))  {
+        return CMD_FAIL;
+    }
+    romMapper.mapSelAddress = (uint16_t)cmd->arg_val[0];
+    if (romMapper.mapSelAddress != 0xffff) romMapper.megarom = true;
+    else  romMapper.megarom = false;
 
+   if (!z80AddressVaild(cmd->arg_val[1]))  {
+        return CMD_FAIL;
+    }
+    romMapper.romReadAddress = (uint16_t)cmd->arg_val[1];
+ 
+  if (!z80AddressVaild(cmd->arg_val[2]))  {
+        return CMD_FAIL;
+    }
+    romMapper.romReadSize = (uint16_t)cmd->arg_val[2];
+ 
+    return CMD_OK;
+
+}
+
+// RMRD,[Mapper Start],[Mapper End](,[Slot])                    (追加 V1.40～) Mega ROMの一括Read
+int cmd_romMapperRead(const Command_t* cmd) {
+
+    uint8_t bankStart,BankEnd;
+    uint8_t slot;
+    uint8_t bank;
+    uint8_t readData;
+    uint16_t address;
+
+    int length = 0;
+    int totalLength = 0;
+    bool cmdResult;
+        
+    if (cmd->arg_val[0] == -1)  return CMD_FAIL;            // データ必須
+    bankStart = (uint8_t) cmd->arg_val[0];
+
+    if (cmd->arg_val[1] == -1)  return CMD_FAIL;            // データ必須
+    BankEnd = (uint8_t) cmd->arg_val[1];
+
+    slot = slotVaild(cmd->arg_val[2]);
+    if (slot == 0) return CMD_FAIL;                         // スロット不正
+
+    totalLength = romMapper.romReadSize * (BankEnd - bankStart + 1);
+    cmdResult = CMD_OK;
+
+    for (bank = bankStart;bank < BankEnd;bank++){
+        address = romMapper.romReadAddress;
+        if (romMapper.megarom) {
+            slotWriteData(slot, romMapper.mapSelAddress, bank);
+        }
+
+        length = 0;
+        while(length < (int) romMapper.romReadSize){
+            while (cdc_q_count >= CDC_PRINTF_QSIZE-1) { // キュー満杯時待機
+                sleep_ms(1);
+            }
+
+            int chunk = ((totalLength - length) < CDC_PRINTF_BUF_SIZE) ? (totalLength - length) : CDC_PRINTF_BUF_SIZE; // 分割サイズ決定
+
+            for (int i=0;i<chunk;i++){
+
+                if (cmdResult == CMD_OK) {
+                    cmdResult = slotReadData(slot, address, &readData);
+                    if (cmdResult != CMD_OK) readData = 0x00;
+                }
+                cdc_queue[cdc_q_write].buf[i] = readData;
+                address++;
+            }
+
+            cdc_queue[cdc_q_write].binLength = chunk; // バイナリ長を設定
+            cdc_queue[cdc_q_write].valid = true;      // 有効化
+            cdc_q_write = (cdc_q_write + 1) % CDC_PRINTF_QSIZE; // 次の書き込み位置へ
+            cdc_q_count++;                             // 件数インクリメント
+            length += chunk;                           // オフセット進める
+        }
+    }
+    return cmdResult;
+
+}
 
 void ledColorInit(void){
     ledColorR[LED_STATUS_IDLE] =   0x0; ledColorG[LED_STATUS_IDLE] =   0x0; ledColorB[LED_STATUS_IDLE] =   0x0;

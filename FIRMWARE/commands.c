@@ -71,41 +71,45 @@ extern int cmd_readerFactoryTest(const Command_t* cmd);         // main.c 実装
 extern int cmd_setdebuglog(const Command_t* cmd);         // main.c 実装
 extern int cmd_slotReadTransferWithHash(const Command_t* cmd);         // main.c 実装
 extern int cmd_hset(const Command_t* cmd);         // main.c 実装
+extern int cmd_romMapperSet(const Command_t* cmd);         // main.c 実装
+extern int cmd_romMapperRead(const Command_t* cmd);         // main.c 実装
 
 const CommandTableEntry cmd_table[] = {
-    {"HSET", cmd_hset},		    // HSET,[Address],[Data]		                        Hardware Setting,
-    {"ERROFF", cmd_err_displayOff},		        // DISPON　CMD後のOK表示無し
-    {"ERRON", cmd_err_displayOn},		        // DISPON　CMD後のOK表示あり
-    {"BCLR", cmd_bufClear},		        // BCLR, [Buffer Address],[Length],[Data]		        Buffer RAMのClear,
-    {"BSND", cmd_buf2Host},		        // BSND,[Buffer Address],[Length]		                Buffer RAMへのHOSTからのデータ転送,
-    {"BRCV", cmd_host2buf},		        // BRCV,[Buffer Address],[Length]		                Buffer RAMからHOSTへのデータ転送,
-    {"HVER", cmd_hwVersion},		    // HVER		                                            Hardware Version,
-    {"HINF", cmd_hwInfomation},		    // HINF		                                            Hardware Information,
-    {"HSTS", cmd_hwIntenalStatus},	    // HSTS		                                            SlotのCMD実行状態を表示,
-    {"SCHK", cmd_slotCassetteCheck},	// SCHK		                                            SlotのCassette接続状態を表示(Power ON不要),
-    {"SPON", cmd_slotPowerOn},		    // SPON		                                            Slotの電源を入れて、状態のセルフチェック,各信号の有効化,RESETをします。,
-    {"SPOFF", cmd_slotPowerOff},		// SPOFF		                                        Slotの電源をOFFにします。,
-    {"SMRD", cmd_slotReadMem},		    // SMRD,[Address](,[Slot])		                        Slotから1Byte Readします,
-    {"SMWR", cmd_slotWriteMem},		    // SMRD,[Address],[Data](,[Slot])		                Slotへ1Byte Writeします,
-    {"SMTR", cmd_slotReadTransfer},		// SMTR,[Address],[Buffer Address],[Length](,[Slot])	SlotからBufferへ一括Readします,
-    {"SMTW", cmd_slotWriteTransfer},	// SMTW,[Buffer Address],[Address],[Length](,[Slot])	BufferからSlotへ一括Writeします,
-    {"SSEL", cmd_slotSelect},		    // SSEL,[Slot]		                                    Slot選択,
-    {"SRST", cmd_slotReset},		    // SRST		                                            SlotのReset,
-    {"IORD", cmd_ioRead},		        // IORD,[IO]		                                    IOへ1Byte Readします,
-    {"IOWR", cmd_ioWrite},		        // IOWR,[IO],[Data]		                                IOから1Byte Writeします,
-    {"IOTR", cmd_io2buf},		        // IOTR,[IO],[Buffer Address],[Num]		                IOへBufferへ一括Readします,
-    {"IOTW", cmd_buf2io},		        // IOTW,[Buffer Address],[IO],[Num]		                BufferからIOへ一括Writeします,
+    {"HSET", cmd_hset},		            // HSET,[Address],[Data]		                                Hardware Setting,
+    {"ERROFF", cmd_err_displayOff},		// DISPON　CMD後のOK表示無し
+    {"ERRON", cmd_err_displayOn},		// DISPON　CMD後のOK表示あり
+    {"BCLR", cmd_bufClear},		        // BCLR, [Buffer Address],[Length],[Data]		                Buffer RAMのClear,
+    {"BSND", cmd_buf2Host},		        // BSND,[Buffer Address],[Length]		                        Buffer RAMへのHOSTからのデータ転送,
+    {"BRCV", cmd_host2buf},		        // BRCV,[Buffer Address],[Length]		                        Buffer RAMからHOSTへのデータ転送,
+    {"HVER", cmd_hwVersion},		    // HVER		                                                    Hardware Version,
+    {"HINF", cmd_hwInfomation},		    // HINF		                                                    Hardware Information,
+    {"HSTS", cmd_hwIntenalStatus},	    // HSTS		                                                    SlotのCMD実行状態を表示,
+    {"SCHK", cmd_slotCassetteCheck},	// SCHK		                                                    SlotのCassette接続状態を表示(Power ON不要),
+    {"SPON", cmd_slotPowerOn},		    // SPON		                                                    Slotの電源を入れて、状態のセルフチェック,各信号の有効化,RESETをします。,
+    {"SPOFF", cmd_slotPowerOff},		// SPOFF		                                                Slotの電源をOFFにします。,
+    {"SMRD", cmd_slotReadMem},		    // SMRD,[Address](,[Slot])		                                Slotから1Byte Readします,
+    {"SMWR", cmd_slotWriteMem},		    // SMRD,[Address],[Data](,[Slot])		                        Slotへ1Byte Writeします,
+    {"SMTR", cmd_slotReadTransfer},		// SMTR,[Address],[Buffer Address],[Length](,[Slot])        	SlotからBufferへ一括Readします, 
+    {"SMTW", cmd_slotWriteTransfer},	// SMTW,[Buffer Address],[Address],[Length](,[Slot])        	BufferからSlotへ一括Writeします,
+    {"SSEL", cmd_slotSelect},		    // SSEL,[Slot]		                                            Slot選択,
+    {"SRST", cmd_slotReset},		    // SRST		                                                    SlotのReset,
+    {"IORD", cmd_ioRead},		        // IORD,[IO]		                                            IOへ1Byte Readします,
+    {"IOWR", cmd_ioWrite},		        // IOWR,[IO],[Data]		                                        IOから1Byte Writeします,
+    {"IOTR", cmd_io2buf},		        // IOTR,[IO],[Buffer Address],[Num](,[Mode])		            IOへBufferへ一括Readします,(mode追加 V1.40～)
+    {"IOTW", cmd_buf2io},		        // IOTW,[Buffer Address],[IO],[Num](,[Mode])		            BufferからIOへ一括Writeします,(mode追加 V1.40～)
     {"_FFU", cmd_ffuMode},		        // _FFU
-    {"LEDRDY", cmd_ledColorReady},		// LEDRDY,[R],[G],[B]                                   LEDの色変更(Ready)
-    {"LEDPON", cmd_ledColorPowerOn},	// LEDPON,[R],[G],[B]                                   LEDの色変更(PowerON)
-    {"LEDACC", cmd_ledColorAcc},		// LEDACC,[R],[G],[B]                                   LEDの色変更(Access)
-    {"FTEST", cmd_readerFactoryTest},	// Factory Test                                         製造時のテストを実施します。
-    {"BSCR", cmd_bufScript},		    // BSCR,[Buffer Address](,[SLOT])	                    Bufferの上のScriptを実行します。
-    {"LSCR", cmd_loopScript},		    // LSCR,[Count]	                                        ScriptをJpLoop回数を設定します。
-    {"BDMP", cmd_bufDump},		        // BDMP,[Buffer Address]		                        Bufferのデータ内容の表示(DEBUG用)
-    {"SDMP", cmd_slotDump},		        // SDMP,[Buffer Address]		                        Bufferのデータ内容の表示(DEBUG用)
-    {"SDBGON", cmd_setdebuglog},	    // SDBGON                   	                        シリアルのデバッグ出力を有効にする
-    {"SMTH", cmd_slotReadTransferWithHash}	    // SMTH,[Address],[Buffer Address],[Length](,[Slot])    当該エリアをReadしてHash値を計算し返します
+    {"LEDRDY", cmd_ledColorReady},		// LEDRDY,[R],[G],[B]                                           LEDの色変更(Ready)
+    {"LEDPON", cmd_ledColorPowerOn},	// LEDPON,[R],[G],[B]                                           LEDの色変更(PowerON)
+    {"LEDACC", cmd_ledColorAcc},		// LEDACC,[R],[G],[B]                                           LEDの色変更(Access)
+    {"FTEST", cmd_readerFactoryTest},	// Factory Test                                                 製造時のテストを実施します。
+    {"BSCR", cmd_bufScript},		    // BSCR,[Buffer Address](,[SLOT])	                            Bufferの上のScriptを実行します。
+    {"LSCR", cmd_loopScript},		    // LSCR,[Count]	                                                ScriptをJpLoop回数を設定します。
+    {"BDMP", cmd_bufDump},		        // BDMP,[Buffer Address]		                                Bufferのデータ内容の表示(DEBUG用)
+    {"SDMP", cmd_slotDump},		        // SDMP,[Buffer Address]		                                Bufferのデータ内容の表示(DEBUG用)
+    {"SDBGON", cmd_setdebuglog},	    // SDBGON                   	                                シリアルのデバッグ出力を有効にする
+    {"SMTH", cmd_slotReadTransferWithHash},	    // SMTH,[Address],[Buffer Address],[Length](,[Slot])    (追加 V1.20～) 当該エリアをReadしてHash値を計算し返します
+    {"RMSET", cmd_romMapperSet},	    // RMSET,[Mapper Selecter Address],[Bank Address],[Bank size]   (追加 V1.40～) Mega ROM Mapperの設定
+    {"RMRD", cmd_romMapperRead}	        // RMRD,[Mapper Start],[Mapper End](,[Slot])                    (追加 V1.40～) Mega ROMの一括Read
 };
 
 const size_t cmd_table_size = sizeof(cmd_table) / sizeof(CommandTableEntry); // テーブルサイズ計算
