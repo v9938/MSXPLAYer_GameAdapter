@@ -175,8 +175,9 @@ MSXPLAYerは、別途必要になること、将来の正式頒布版と仕様�
 
 Windows向け：(VC++2019/2026で動作確認済)  
 
-- **Game Cartridgeダンプサンプル:**  [ROMカセットDUMPプログラム](./SOFTWARE/MSXCR_ROMDUMPER/)
+- **Game Cartridgeダンプサンプル(要 FW:260531以上):**  [ROMカセットDUMPプログラム](./SOFTWARE/MSXCR_ROMDUMPER_FW260531/)
 - **Game Cartridgeダンプサンプル(要 FW:260520以上):**  [ROMカセットDUMPプログラム](./SOFTWARE/MSXCR_ROMDUMPER_FW260519/)
+- **Game Cartridgeダンプサンプル:**  [ROMカセットDUMPプログラム](./SOFTWARE/MSXCR_ROMDUMPER/)
 - **Script Engineサンプル:** [MSX_SimpleCartridge書き込みプログラム](./SOFTWARE/SimpleROM64KWriter/)  
 　　対応cartridge:[https://github.com/v9938/MSX_SimpleCartridge](https://github.com/v9938/MSX_SimpleCartridge)  
 
@@ -186,10 +187,11 @@ Windows向け：(VC++2019/2026で動作確認済)
 - **madscientさん作成 mgadump:**  [https://github.com/madscient/mgadump](https://github.com/madscient/mgadump)  
 - **t-bucchiさん作成 MSXPLAYer Game Cartidge Adapter GUI:**  [https://github.com/t-bucchi/msx-cartrigde-adapter-gui](https://github.com/t-bucchi/msx-cartrigde-adapter-gui)  
 
-### MSXCR_ROMDUMPER_FW260519 の使い方
+### MSXCR_ROMDUMPER_FW260531 の使い方
 
 本プログラムは FW 260520 以降で追加された `SMTH` コマンドを利用して、
 ROM 読み出し時の HASH 値を取得しながらダンプを行う Windows 用ツールです。  
+260531版では、バンク処理などを見直して、高速化と動作安定化を図りました。  
 
 #### コマンドライン
 
@@ -214,11 +216,9 @@ ROM 読み出し時の HASH 値を取得しながらダンプを行う Windows �
 #### 各モードの説明
 
 **通常モード**
-
 コマンドライン引数に指定したファイル名で保存します。
 
 **自動ファイル名モード(/AUTO)**
-
 ROM 情報および HASH 値をもとに保存ファイル名を自動決定します。  
 第2引数を指定した場合は、そのフォルダーに保存します。  
 第2引数を省略した場合はカレントフォルダーに保存します。  
@@ -241,6 +241,10 @@ ROM DB が使えない場合や一致情報が得られない場合は、ROM サ
 既存ファイルの内容が同一であれば、ファイル名の先頭に `[same_+hash]` を付与します。  
 既存ファイルの内容が異なる場合は、ファイル名の先頭に `[other_+hash]` を付与します。  
 読み取りに失敗したと推測される場合は、ファイル名の先頭に `[unsuccessful]` を付与します。  
+
+## 動作確認済ROMカセット
+
+[動作確認済ROMカセットリスト](./softlist.md)  
 
 ## ファームウェアについて
 

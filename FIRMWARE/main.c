@@ -28,6 +28,7 @@
 //                      読み込みタイミングを調整した
 //  26/05/28 v1.30      BS6101を採用したASCII3 ROMの動作不良対策で書き込み時のRD信号をPushPullに変更
 //  26/05/31 v1.40      HVERの表示変更、Megarom Read支援コマンドRMSET/RMRDを追加
+//  26/06/01 v1.41      IOTRのIOアドレス加算の仕様を変更
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -1653,6 +1654,7 @@ int cmd_io2buf(const Command_t* cmd) {
     int length;
     int i;
     uint8_t data;
+    bool incIOaddress;
 
     // パラメータ
     if (!z80AddressVaild(cmd->arg_val[0]))  {
@@ -1669,6 +1671,10 @@ int cmd_io2buf(const Command_t* cmd) {
     if (cmd->arg_val[2] >= DATABUF_SIZE) {
         return CMD_FAIL;
     }
+
+    if (cmd->arg_val[3] == -1)  incIOaddress = false;
+    else                        incIOaddress = true;
+
     if (bufAddress + length >= DATABUF_SIZE)  length = DATABUF_SIZE - bufAddress; // 補正
 
     for (i = bufAddress ; i < (bufAddress + length) ; i++){
@@ -1676,7 +1682,7 @@ int cmd_io2buf(const Command_t* cmd) {
             return CMD_FAIL;
         }
         slotMem[i] = data;                             // バッファへ格納
-        slotAddress++;
+        if (incIOaddress) slotAddress++;
     }
     return CMD_OK;
 }
@@ -1688,6 +1694,7 @@ int cmd_buf2io(const Command_t* cmd) {
     int length;
     int i;
     uint8_t data;
+    bool incIOaddress;
 
     // パラメータ
     if (!z80AddressVaild(cmd->arg_val[0]))  {
@@ -1704,14 +1711,20 @@ int cmd_buf2io(const Command_t* cmd) {
     if (cmd->arg_val[2] >= DATABUF_SIZE) {
         return CMD_FAIL;
     }
+
+    if (cmd->arg_val[3] == -1)  incIOaddress = false;
+    else                        incIOaddress = true;
+
+
     if (bufAddress + length >= DATABUF_SIZE)  length = DATABUF_SIZE - bufAddress; // 補正
 
     for (i = bufAddress ; i < (bufAddress + length) ; i++){
+        
         data = slotMem[i];                             // バッファから読み出し
         if (slotWriteIO(slotAddress, data) != CMD_OK) { // IO に書き込み
             return CMD_FAIL;
         }
-        slotAddress++;
+        if (incIOaddress) slotAddress++;
     }
     return CMD_OK;
 }

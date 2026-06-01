@@ -131,6 +131,7 @@
   - `HW_NAME`：カードリーダの名称
   - `HW_VERSION`：HWのVersion
   - `FIRMWARE DATE`:FWのリリース日
+  ※ 260531(V1.40)で出力フォーマットが変更になっています。  
 
 ---
 
@@ -170,6 +171,14 @@
     1の時はUARTからデバッグ用の出力が出る設定です。  
   - `SCRLOOP`: ScriptモードのLOOP回数の最大設定値  
     ScriptモードのLOOP回数を表示します。初期値は1000回  
+  - `MEMWAIT`: Read/Write後のWait値  
+    Memory Read/Write後のWait時間 初期値は0  
+  - `RDWAIT`: Memory Read時の/RD幅  
+    Memory Readの/RDがLOWになっている時間の設定値 初期値は10 (180ns)  
+  - `WRWAIT`: Memory Write時の/WR幅  
+    Memory Writeの/WRがLOWになっている時間の設定値 初期値は10 (180ns)  
+  - `P6MODE`: PC6001カセットモードの設定値  
+    PC6001 16K Read Modeの設定値表示  
 
 ---
 
@@ -272,7 +281,7 @@
   - `Length` :  0000〜FFFF　読み込み長（省略時最大）
   - `BufferAddress` :  0000〜FFFF　バッファー格納開始位置（省略時0）
   - `Slot` : 1 or 2（省略時defaultSlot）
-- **応答**: `OK/FAIL`
+- **応答**: Data + `OK/FAIL`
 
 ---
 
@@ -314,11 +323,12 @@
 ### 21) IOTR - IO → Buffer Transfer Read（実装準拠）
 
 - **機能**: IOから連続読み出ししてバッファーへ格納
-- **書式**: `IOTR,[IO],[Length],[BufferAddress]`
+- **書式**: `IOTR,[IO],[Length],[BufferAddress](,[Mode])`
 - **引数（実装準拠）**:
   - `IO` : 0000〜FFFF　開始IOアドレス
   - `Length` :0000〜FFFF　読み出し回数（バイト数）
   - `BufferAddress` : バッファー格納開始位置
+  - `Mode` : 1 でIOアドレスはアクセス毎に加算、省略時は同一アドレスにアクセス (機能追加：V1.41～)
 - **応答**: `OK/FAIL`
 
 ---
@@ -326,11 +336,12 @@
 ### 22) IOTW - Buffer → IO Transfer Write（実装準拠）
 
 - **機能**: バッファーからIOへ連続書き込み
-- **書式**: `IOTW,[IO],[Length],[BufferAddress]`
+- **書式**: `IOTW,[IO],[Length],[BufferAddress](,[Mode])`
 - **引数（実装準拠）**:
   - `IO` : 0000〜FFFF　開始IOアドレス
   - `Length` : 0000〜FFFF　書き込み回数（バイト数）
   - `BufferAddress` : 0000〜FFFF　バッファー読み出し開始位置
+  - `Mode` : 1 でIOアドレスはアクセス毎に加算、省略時は同一アドレスにアクセス (機能追加：V1.41～)
 - **応答**: `OK/FAIL`
 
 ---
@@ -440,6 +451,32 @@
 
 ---
 
+[260531_VERにて追加]
+
+### 32) RMSET - ROM Mapper Setting
+
+- **機能**: RMRDコマンドで使うParameterをセットします。  
+- **書式**: `RMSET,[Mapper Selector Address],[Bank Read Address],[Bank size]`
+- **引数**:
+  - `Mapper Selector Address]` : 0000〜FFFF　ROM Mapperの切り替えアドレス、FFFFを指定した場合は、バンク切り替えをしません。  
+  - `Bank Read Address` :  0000〜FFFF　ReadするBankの先頭アドレス  
+  - `Bank size` :  0000〜FFFF　1バンク辺りの容量
+- **応答**: `OK/FAIL`
+
+---
+
+### 33) RMRD - ROM Mapper Read
+
+- **機能**: スロットに挿してあるメガロムをバンクを切り替えながら一括で読み込みます。(バッファーは使用しません)  
+- **書式**: `RMRD,[Start Bank],[Bank Capacity](,[Slot])`
+- **引数**:
+  - `Start Bank` : 00〜FF　スロット側開始アドレス
+  - `Bank Capacity` :  00〜FF　読み込むBANK数を指定します  
+  - `Slot` : 1 or 2（省略時defaultSlot）
+- **応答**: Read Data + `OK/FAIL`
+
+---
+
 ## シリアルコマンド例
 
 ### 例1: スロットの0x0000〜0x3FFFを読み出してPCへ送信
@@ -458,6 +495,18 @@ SPON
 BRCV,0000,2000
 (ここで 0x2000 バイトのバイナリを送信)
 SMTW,8000,2000,0000,01
+SPOFF
+```
+
+[260531_VERにて追加]
+
+### 例3: ASCII8K Typeの1Mbitメガロムカセットを一括で読み込む
+
+```CMD_EX3
+SPON
+RMSET,7000,8000,2000
+RMRD,0,10
+(ここで 0x20000 バイトのバイナリを受信)
 SPOFF
 ```
 
