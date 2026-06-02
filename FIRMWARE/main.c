@@ -70,9 +70,9 @@
 #include "pico/bootrom.h"                       // reset_usb_boot 等
 #include "boot/picoboot.h"
 #include "boot/picobin.h"
-#include "pwm_low_hiz.pio.h"  // コンパイル済みPIOプログラムヘッダ
-#include "pico/version.h" // SDKのバージョン情報
-
+#include "pwm_low_hiz.pio.h"                    // コンパイル済みPIOプログラムヘッダ
+#include "pico/version.h"                       // SDKのバージョン情報
+#include "build_timestamp.h"                    // TimeStampのヘッダーファイル
 
 #include "commands.h"                           // 別ファイルに分割したコマンドテーブル // commands.c 参照
 #include "ports.h"                              // 別ファイルに分割したボードピン定義 // ports.c 参照

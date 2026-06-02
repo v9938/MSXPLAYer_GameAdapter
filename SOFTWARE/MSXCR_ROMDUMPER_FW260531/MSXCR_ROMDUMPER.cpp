@@ -49,9 +49,11 @@ typedef enum {
     MAPPER_HARRYFOX,                // HARRY FOX
     MAPPER_FMPAC,                   // FMPAC
     MAPPER_HALNOTE,                 // Hal Note
+    MAPPER_NO_MAPPER_8K,            // 8KB no mapper
     MAPPER_NO_MAPPER_16K,           // 16KB no mapper
     MAPPER_NO_MAPPER_32K,           // 32KB no mapper
-    MAPPER_NO_MAPPER_48K,            // 48KB no mapper
+    MAPPER_NO_MAPPER_48K,           // 48KB no mapper
+    MAPPER_NO_MAPPER_64K,           // 64KB no mapper
     MAPPER_TYPE_COUNT
 } MAPPER_TYPE;
 
@@ -1039,9 +1041,6 @@ static DWORD Hash7936(const BYTE* data, DWORD address)
     DWORD hash = 0x5381;
     DWORD i;
 
-    if (address + HASH_SIZE > 0xC000)
-        return 0;
-
     for (i = 0; i < HASH_SIZE; i++)
     {
         hash = ((hash << 5) + hash) ^ data[address + i];
@@ -1236,6 +1235,12 @@ static BOOL DetectASCII8K(HANDLE hSerial, ROM_INFO* romInfo)
         if (!slotReadHash(hSerial, 0x8000, HASH_SIZE, &hashB[2])) return FALSE;
         if (!slotReadHash(hSerial, 0xa000, HASH_SIZE, &hashB[3])) return FALSE;
 
+        // Bankが切り替わっていない場合は、別タイプ
+        if ((bankNum == 0) && ((hashA[0] == hashB[0]) || (hashA[1] == hashB[1]) || (hashA[2] == hashB[2]) || (hashA[3] == hashB[3])))
+        {
+            break;
+        }
+
         // Patternが一致の場合
         if ((hashB[0] == hashA[3]) && (hashB[1] == hashA[2]) && (hashB[2] == hashA[1]) && (hashB[3] == hashA[0]))
         {
@@ -1245,11 +1250,6 @@ static BOOL DetectASCII8K(HANDLE hSerial, ROM_INFO* romInfo)
 
         // PatternがFFの場合
         if ((filledFFHash == hashB[0]) && (filledFFHash == hashB[1]) && (filledFFHash == hashB[2]) && (filledFFHash == hashB[3]))
-        {
-            break;
-        }
-        // bankが切り替わっていない場合
-        if ((hashA[0] == hashB[0]) || (hashA[1] == hashB[1]) || (hashA[2] == hashB[2]) || (hashA[3] == hashB[3]))
         {
             break;
         }
@@ -1361,7 +1361,11 @@ static BOOL DetectASCII16K(HANDLE hSerial, ROM_INFO* romInfo)
         if (!slotReadHash(hSerial, 0x8000, HASH_SIZE, &hashB[2])) return FALSE;
         if (!slotReadHash(hSerial, 0xa000, HASH_SIZE, &hashB[3])) return FALSE;
 
-
+        // Bankが切り替わっていない場合は、別タイプ
+        if ((bankNum == 0) && ((hashA[0] == hashB[0]) || (hashA[1] == hashB[1]) || (hashA[2] == hashB[2]) || (hashA[3] == hashB[3])))
+        {
+            break;
+        }
 
         // Patternが一致の場合
         if ((hashB[0] == hashA[2]) && (hashB[1] == hashA[3]) && (hashB[2] == hashA[0]) && (hashB[3] == hashA[1]))
@@ -1373,11 +1377,6 @@ static BOOL DetectASCII16K(HANDLE hSerial, ROM_INFO* romInfo)
 
         // PatternがFFの場合
         if ((filledFFHash == hashB[0]) && (filledFFHash == hashB[1]) && (filledFFHash == hashB[2]) && (filledFFHash == hashB[3]))
-        {
-            break;
-        }
-
-        if ((hashA[0] == hashB[0]) || (hashA[1] == hashB[1]) || (hashA[2] == hashB[2]) || (hashA[3] == hashB[3]))
         {
             break;
         }
@@ -2014,18 +2013,17 @@ static BOOL DetectHalnote(HANDLE hSerial, ROM_INFO* romInfo)
     return TRUE;
 }
 
-
 static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 {
-    BYTE fullDataBuffer[0xC000];
+    BYTE fullDataBuffer[0x10000];
     DWORD filledFFHash;
 
     filledFFHash = HashFilledFF(HASH_SIZE);
 
-    printf("=== Detecting Standard ROM Type ===\n");
+    printf("\n=== Testing Standard ROM Type ===\n");
 
-    printf("Reading 0x0000-0xBFFF...\n");
-    if (!slotDump(hSerial, 0x0000, 0xC000, fullDataBuffer))
+    printf("Reading 0x0000-0xFFFF...");
+    if (!slotDump(hSerial, 0x0000, 0x10000, fullDataBuffer))
     {
         printf("Failed to read full ROM\n");
         return FALSE;
@@ -2037,12 +2035,29 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
     DWORD hash6 = Hash7936(fullDataBuffer, 0x6000);
     DWORD hash8 = Hash7936(fullDataBuffer, 0x8000);
     DWORD hashA = Hash7936(fullDataBuffer, 0xA000);
+    DWORD hashC = Hash7936(fullDataBuffer, 0xC000);
+    DWORD hashE = Hash7936(fullDataBuffer, 0xE000);
+    
+    //DAWN PATROL (64KB ROM)
+    if ((hashC != filledFFHash) || (hashE != filledFFHash)) {
+        if ((hashC != hash0) && (hashC != hash4) && (hashC != hash8)) {
+            if ((hashE != hash2) && (hashE != hash6) && (hashC != hashA)) {
+                printf("\n=== 64KB(0000H) ROM Detected ===\n");
+                romInfo->mapperType = MAPPER_NO_MAPPER_64K;
+                romInfo->mapperName = "64KB ROM";
+                romInfo->romSize = 0x10000;
+                romInfo->validDataStart = 0x0000;
+                romInfo->validDataSize = 0x10000;
+                return TRUE;
+            }
+        }
+    }
 
     if ((hash0 == filledFFHash) && (hash2 == filledFFHash) && (hash4 != filledFFHash) && (hash4 == hash6) && (hash8 == filledFFHash) && (hashA == filledFFHash))
     {
-        printf("\n=== 8KB Mirrored ROM Detected ===\n");
-        romInfo->mapperType = MAPPER_NO_MAPPER_16K;
-        romInfo->mapperName = "8KB ROM (Mirrored)";
+        printf("\n=== 8KB(4000H) Mirrored ROM Detected ===\n");
+        romInfo->mapperType = MAPPER_NO_MAPPER_8K;
+        romInfo->mapperName = "8KB ROM";
         romInfo->romSize = 0x2000;
         romInfo->validDataStart = 0x4000;
         romInfo->validDataSize = 0x2000;
@@ -2051,9 +2066,9 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 
     if ((hash0 == filledFFHash) && (hash2 == filledFFHash) && (hash4 == filledFFHash) && (hash6 == filledFFHash) && (hash8 != filledFFHash) && (hash8 == hashA))
     {
-        printf("\n=== 8KB Mirrored ROM Detected ===\n");
-        romInfo->mapperType = MAPPER_NO_MAPPER_16K;
-        romInfo->mapperName = "8KB ROM (Mirrored)";
+        printf("\n=== 8KB(8000H) Mirrored ROM Detected ===\n");
+        romInfo->mapperType = MAPPER_NO_MAPPER_8K;
+        romInfo->mapperName = "8KB ROM";
         romInfo->romSize = 0x2000;
         romInfo->validDataStart = 0x8000;
         romInfo->validDataSize = 0x2000;
@@ -2062,8 +2077,8 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 
     if ((hash0 == filledFFHash) && (hash2 == filledFFHash) && (hash4 != filledFFHash) && (hash6 == filledFFHash) && (hash8 == filledFFHash) && (hashA == filledFFHash))
     {
-        printf("\n=== 16KB Standard ROM Detected ===\n");
-        romInfo->mapperType = MAPPER_NO_MAPPER_16K;
+        printf("\n=== 8KB(4000H) Standard ROM Detected ===\n");
+        romInfo->mapperType = MAPPER_NO_MAPPER_8K;
         romInfo->mapperName = "8KB ROM";
         romInfo->romSize = 0x2000;
         romInfo->validDataStart = 0x4000;
@@ -2073,7 +2088,7 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 
     if ((hash0 == filledFFHash) && (hash2 == filledFFHash) && (hash4 != filledFFHash) && (hash6 != filledFFHash) && (hash8 == filledFFHash) && (hashA == filledFFHash))
     {
-        printf("\n=== 16KB Standard ROM Detected ===\n");
+        printf("\n=== 16KB(4000H) Standard ROM Detected ===\n");
         romInfo->mapperType = MAPPER_NO_MAPPER_16K;
         romInfo->mapperName = "16KB ROM";
         romInfo->romSize = 0x4000;
@@ -2084,7 +2099,7 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 
     if ((hash0 == filledFFHash) && (hash2 == filledFFHash) && (hash4 == filledFFHash) && (hash6 == filledFFHash) && (hash8 != filledFFHash) && (hashA != filledFFHash))
     {
-        printf("\n=== 16KB Standard ROM Detected ===\n");
+        printf("\n=== 16KB(8000H) Standard ROM Detected ===\n");
         romInfo->mapperType = MAPPER_NO_MAPPER_16K;
         romInfo->mapperName = "16KB ROM";
         romInfo->romSize = 0x4000;
@@ -2095,7 +2110,7 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 
     if ((hash0 == hash4) && (hash2 == hash6) && (hash4 == hash8) && (hash6 == hashA))
     {
-        printf("\n=== 16KB Standard ROM Detected ===\n");
+        printf("\n=== 16KB(4000H) Standard ROM Detected ===\n");
         romInfo->mapperType = MAPPER_NO_MAPPER_16K;
         romInfo->mapperName = "16KB ROM";
         romInfo->romSize = 0x4000;
@@ -2106,7 +2121,7 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 
     if ((hash0 == filledFFHash) && (hash2 == filledFFHash) && (hash4 == hash8) && (hash6 == hashA))
     {
-        printf("\n=== 16KB Standard ROM Detected ===\n");
+        printf("\n=== 16KB(4000H) Standard ROM Detected ===\n");
         romInfo->mapperType = MAPPER_NO_MAPPER_16K;
         romInfo->mapperName = "16KB ROM";
         romInfo->romSize = 0x4000;
@@ -2117,8 +2132,8 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 
     if ((hash0 == filledFFHash) && (hash2 == filledFFHash) && (hash4 != hash8) && (hash6 != hashA))
     {
-        printf("\n=== 32KB Standard ROM Detected ===\n");
-        romInfo->mapperType = MAPPER_NO_MAPPER_16K;
+        printf("\n=== 32KB(4000H) Standard ROM Detected ===\n");
+        romInfo->mapperType = MAPPER_NO_MAPPER_32K;
         romInfo->mapperName = "32KB ROM";
         romInfo->romSize = 0x8000;
         romInfo->validDataStart = 0x4000;
@@ -2128,8 +2143,8 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 
     if ((hash0 == hash4) && (hash2 == hash6) && (hash4 != hash8) && (hash6 != hashA))
     {
-        printf("\n=== 32KB Standard ROM Detected ===\n");
-        romInfo->mapperType = MAPPER_NO_MAPPER_16K;
+        printf("\n=== 32KB(4000H) Standard ROM Detected ===\n");
+        romInfo->mapperType = MAPPER_NO_MAPPER_32K;
         romInfo->mapperName = "32KB ROM";
         romInfo->romSize = 0x8000;
         romInfo->validDataStart = 0x4000;
@@ -2139,8 +2154,8 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
 
     if ((hash0 == hash8) && (hash2 == hashA) && (hash4 != hash8) && (hash6 != hashA))
     {
-        printf("\n=== 32KB Standard ROM Detected ===\n");
-        romInfo->mapperType = MAPPER_NO_MAPPER_16K;
+        printf("\n=== 32KB(4000H) Standard ROM Detected ===\n");
+        romInfo->mapperType = MAPPER_NO_MAPPER_32K;
         romInfo->mapperName = "32KB ROM";
         romInfo->romSize = 0x8000;
         romInfo->validDataStart = 0x4000;
@@ -2148,7 +2163,18 @@ static BOOL DetectStandardROM(HANDLE hSerial, ROM_INFO* romInfo)
         return TRUE;
     }
 
-    printf("\n=== 48KB Standard ROM Detected ===\n");
+    if ((hash8 == filledFFHash) && (hashA == filledFFHash) && (hash4 != hash0) && (hash6 != hash2))
+    {
+        printf("\n=== 32KB(0000H) Standard ROM Detected ===\n");
+        romInfo->mapperType = MAPPER_NO_MAPPER_32K;
+        romInfo->mapperName = "32KB ROM";
+        romInfo->romSize = 0x8000;
+        romInfo->validDataStart = 0x0000;
+        romInfo->validDataSize = 0x8000;
+        return TRUE;
+    }
+
+    printf("\n=== 48KB(0000H) Standard ROM Detected ===\n");
     romInfo->mapperType = MAPPER_NO_MAPPER_48K;
     romInfo->mapperName = "48KB ROM";
     romInfo->romSize = 0xC000;
@@ -2403,10 +2429,11 @@ static BOOL ReadCompleteROM(HANDLE hSerial, ROM_INFO* romInfo, BYTE* outData)
     case MAPPER_HALNOTE:
         return ReadHalNote(hSerial, romInfo, outData);
 
-
+    case MAPPER_NO_MAPPER_8K:
     case MAPPER_NO_MAPPER_16K:
     case MAPPER_NO_MAPPER_32K:
     case MAPPER_NO_MAPPER_48K:
+    case MAPPER_NO_MAPPER_64K:
         return ReadStandardROM(hSerial, romInfo, outData);
     default:
         printf("Unknown mapper type\n");

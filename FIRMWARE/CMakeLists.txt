@@ -34,32 +34,51 @@ project(MSXPLAYer_CR VERSION 1.40 LANGUAGES C CXX ASM)
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
-
 cmake_minimum_required(VERSION 3.13)
-string(TIMESTAMP BUILD_DATE "%Y%m%d%H%M")
 
-
+set(MSXPLAYer_CR_SOURCES
+        ${CMAKE_CURRENT_LIST_DIR}/main.c
+        ${CMAKE_CURRENT_LIST_DIR}/commands.c
+        ${CMAKE_CURRENT_LIST_DIR}/ports.c
+        ${CMAKE_CURRENT_LIST_DIR}/usb_descriptors.c
+)
 
 add_executable(MSXPLAYer_CR)
 
 # Create a directory for generated files
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/generated)
 
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_LIST_DIR}/generated/build_timestamp.h
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_LIST_DIR}/generated
+    COMMAND ${CMAKE_COMMAND}
+            -DOUTPUT_FILE=${CMAKE_CURRENT_LIST_DIR}/generated/build_timestamp.h
+            "-DSOURCE_FILES=${MSXPLAYer_CR_SOURCES}"
+            -P ${CMAKE_CURRENT_LIST_DIR}/generate_build_timestamp.cmake
+    DEPENDS ${MSXPLAYer_CR_SOURCES}
+    COMMENT "Generating build timestamp header from target_sources"
+    VERBATIM
+)
+
+add_custom_target(build_timestamp_header
+    DEPENDS ${CMAKE_CURRENT_LIST_DIR}/generated/build_timestamp.h
+)
+
 # Generate the PIO header file from ws2812.pio
 pico_generate_pio_header(MSXPLAYer_CR ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/generated)
 pico_generate_pio_header(MSXPLAYer_CR ${CMAKE_CURRENT_LIST_DIR}/pwm_low_hiz.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/generated)
 
 target_sources(MSXPLAYer_CR PUBLIC
-        ${CMAKE_CURRENT_LIST_DIR}/main.c
-        ${CMAKE_CURRENT_LIST_DIR}/commands.c
-        ${CMAKE_CURRENT_LIST_DIR}/ports.c
-        ${CMAKE_CURRENT_LIST_DIR}/usb_descriptors.c
-        )
+        ${MSXPLAYer_CR_SOURCES}
+)
+
+add_dependencies(MSXPLAYer_CR build_timestamp_header)
 
 # Make sure TinyUSB can find tusb_config.h
 target_include_directories(MSXPLAYer_CR PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/WS2812/include
+        ${CMAKE_CURRENT_LIST_DIR}/generated
         )
 
 # In addition to pico_stdlib required for common PicoSDK functionality, add dependency on tinyusb_device
@@ -86,6 +105,4 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
   PICO_DEFAULT_UART=0 # UART0なら0, UART1なら1
   PICO_DEFAULT_UART_TX_PIN=0 # TXピンのGP番号
   PICO_DEFAULT_UART_RX_PIN=1 # RXピンのGP番号
-  PROJECT_VERSION="${BUILD_DATE}"
-
 )
