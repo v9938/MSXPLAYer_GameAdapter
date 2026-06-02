@@ -29,6 +29,7 @@
 //  26/05/28 v1.30      BS6101を採用したASCII3 ROMの動作不良対策で書き込み時のRD信号をPushPullに変更
 //  26/05/31 v1.40      HVERの表示変更、Megarom Read支援コマンドRMSET/RMRDを追加
 //  26/06/01 v1.41      IOTRのIOアドレス加算の仕様を変更
+//  26/06/01 v1.42      RMRDのBANK指定のバグを修正
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -1918,7 +1919,7 @@ int cmd_romMapperSet(const Command_t* cmd) {
 // RMRD,[Mapper Start],[Mapper End](,[Slot])                    (追加 V1.40～) Mega ROMの一括Read
 int cmd_romMapperRead(const Command_t* cmd) {
 
-    uint8_t bankStart,BankEnd;
+    uint8_t bankStart,Banklength;
     uint8_t slot;
     uint8_t bank;
     uint8_t readData;
@@ -1932,15 +1933,15 @@ int cmd_romMapperRead(const Command_t* cmd) {
     bankStart = (uint8_t) cmd->arg_val[0];
 
     if (cmd->arg_val[1] == -1)  return CMD_FAIL;            // データ必須
-    BankEnd = (uint8_t) cmd->arg_val[1];
+    Banklength = (uint8_t) cmd->arg_val[1];
 
     slot = slotVaild(cmd->arg_val[2]);
     if (slot == 0) return CMD_FAIL;                         // スロット不正
 
-    totalLength = romMapper.romReadSize * (BankEnd - bankStart + 1);
+    totalLength = romMapper.romReadSize * Banklength;
     cmdResult = CMD_OK;
 
-    for (bank = bankStart;bank < BankEnd;bank++){
+    for (bank = bankStart;bank < (bankStart+Banklength);bank++){
         address = romMapper.romReadAddress;
         if (romMapper.megarom) {
             slotWriteData(slot, romMapper.mapSelAddress, bank);
