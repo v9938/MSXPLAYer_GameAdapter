@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cwchar>
 
+#include <ctime>
 // ============================================================================
 // Constants and Defines
 // ============================================================================
@@ -1811,6 +1812,7 @@ static BOOL DetectRType(HANDLE hSerial, ROM_INFO* romInfo)
         romInfo->mapperName = "R-TYPE";
         romInfo->bankCount = 0x18;
         romInfo->romSize = romInfo->bankCount * 0x4000;
+        romInfo->mapperAddress = 0x7000;
         romInfo->readBankSize = 0x4000;
         romInfo->readAreaStart = 0x8000;
         romInfo->readAreaSize = 0x4000;
@@ -1879,7 +1881,7 @@ static BOOL DetectCrossBlam(HANDLE hSerial, ROM_INFO* romInfo)
 
     printf("\n=== Cross Blam ROM Detected ===\n");
     romInfo->mapperType = MAPPER_CROSSBLAM;
-    romInfo->mapperName = "CROSS BLAM (page1:fix + page2:bank)";
+    romInfo->mapperName = "CROSS BLAM";
     romInfo->bankCount = 0x4;
     romInfo->romSize = romInfo->bankCount * 0x4000;
     romInfo->readBankSize = 0x4000;
@@ -2417,14 +2419,15 @@ static BOOL ReadCompleteROM(HANDLE hSerial, ROM_INFO* romInfo, BYTE* outData)
     case MAPPER_ASCII_8K:
     case MAPPER_KONAMI_8K:
     case MAPPER_KONAMI_SCC:
+    case MAPPER_RTYPE:
         return ReadMegaROM(hSerial, romInfo, outData);
 
     case MAPPER_GENERIC_16K:
         return ReadGeneric16K(hSerial, romInfo, outData);
     case MAPPER_GENERIC_8K:
         return ReadGeneric8K(hSerial, romInfo, outData);
-    case MAPPER_RTYPE:
-        return ReadRType(hSerial, romInfo, outData);
+//  case MAPPER_RTYPE:
+//        return ReadRType(hSerial, romInfo, outData);
     case MAPPER_CROSSBLAM:
         return ReadCrossBlam(hSerial, romInfo, outData);
     case MAPPER_HARRYFOX:
@@ -2584,6 +2587,116 @@ static bool FileExists(const wchar_t* path)
 
     DWORD attr = GetFileAttributesW(path);
     return (attr != INVALID_FILE_ATTRIBUTES) && !(attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static std::string EscapeCsvField(const std::string& s)
+{
+    std::string out;
+    out.reserve(s.size() + 8);
+    
+    for (char ch : s)
+    {
+        if (ch == '"')
+            out += "\"\"";
+        else
+            out += ch;
+    }
+    
+    return "\"" + out + "\"";
+}
+
+
+
+static std::string GetCurrentDateTimeString()
+{
+    time_t now = time(NULL);
+    struct tm localTm = {};
+
+#if defined(_MSC_VER)
+    localtime_s(&localTm, &now);
+#else
+    localTm = *localtime(&now);
+#endif
+
+    char buf[64];
+    sprintf_s(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d",
+        localTm.tm_year + 1900,
+        localTm.tm_mon + 1,
+        localTm.tm_mday,
+        localTm.tm_hour,
+        localTm.tm_min,
+        localTm.tm_sec);
+
+    return std::string(buf);
+
+}
+
+static bool FileExistsW(const std::wstring& path)
+{
+    if (path.empty())
+        return false;
+
+    DWORD attr = GetFileAttributesW(path.c_str());
+    return (attr != INVALID_FILE_ATTRIBUTES) && !(attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+static bool AppendDumpListLogCsv(const std::wstring& outputDir,
+    const std::string& dbStatus,
+    const std::string& romFileStatus,
+    const std::string& status,
+    const std::string& title,
+    const std::string& company,
+    const std::string& year,
+    const std::string& system,
+    const std::string & remark,
+    const std::string& romType,
+    DWORD romSize,
+    const std::string& sha1,
+    const std::string& dumpDateTime)
+{
+    std::wstring csvPath = JoinPath(outputDir.empty() ? L"." : outputDir, L"dump_list_log.csv");
+
+    bool needHeader = !FileExistsW(csvPath);
+    std::ofstream ofs(csvPath.c_str(), std::ios::binary | std::ios::app);
+    if (!ofs)
+        return false;
+
+    if (needHeader)
+    {
+        ofs
+            << "\"DBステータス\","
+            << "\"ROMファイルの状態\","
+            << "\"ステータス\","
+            << "\"タイトル\","
+            << "\"メーカ\","
+            << "\"年\","
+            << "\"システム\","
+            << "\"備考\","
+            << "\"ROMタイプ\","
+            << "\"容量\","
+            << "\"SHA1値\","
+            << "\"ダンプ日時\""
+            << "\r\n";
+    }
+
+    std::ostringstream sizeText;
+    sizeText << romSize;
+
+    ofs
+        << EscapeCsvField(dbStatus) << ","
+        << EscapeCsvField(romFileStatus) << ","
+        << EscapeCsvField(status) << ","
+        << EscapeCsvField(title) << ","
+        << EscapeCsvField(company) << ","
+        << EscapeCsvField(year) << ","
+        << EscapeCsvField(system) << ","
+        << EscapeCsvField(remark) << ","
+        << EscapeCsvField(romType) << ","
+        << EscapeCsvField(sizeText.str()) << ","
+        << EscapeCsvField(sha1) << ","
+        << EscapeCsvField(dumpDateTime)
+        << "\r\n";
+    return true;
 }
 
 bool CalcFileSHA1Hex(const wchar_t* filePath, std::string& outSha1)
@@ -2952,7 +3065,7 @@ std::wstring BuildAutoFileName(const ROM_DB_INFO_EX& dbInfo)
     return renamedFile;
 }
 
-int ProcessROMRead(const wchar_t* outputFileArg, bool autoFileNameMode)
+int ProcessROMRead(const wchar_t* outputFileArg, bool autoFileNameMode, bool logMode)
 {
     HDEVINFO hDevInfo = SetupDiGetClassDevs(&GUID_DEVINTERFACE_COMPORT, 0, 0,
         DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
@@ -3126,6 +3239,7 @@ int ProcessROMRead(const wchar_t* outputFileArg, bool autoFileNameMode)
 
         std::wstring savePath;
         bool decidedSavePath = false;
+        std::string romFileStatus = "New";
 
         ROM_DB_INFO_EX dbInfo = {};
         std::wstring usedXmlPath;
@@ -3235,8 +3349,13 @@ int ProcessROMRead(const wchar_t* outputFileArg, bool autoFileNameMode)
         std::wstring finalName = GetFileNameFromPath(savePath);
 
         if (!IsSuccessfulROMImage(romData, romInfo.romSize))
+
         {
+
             finalName = L"[unsuccessful]" + finalName;
+
+            romFileStatus = "Unsuccessful";
+
         }
 
         std::wstring finalOutputPath = JoinPath(finalDir, finalName);
@@ -3252,11 +3371,13 @@ int ProcessROMRead(const wchar_t* outputFileArg, bool autoFileNameMode)
                 if (existingSha1 == sha1)
                 {
                     finalName = L"[same]" + finalName;
+                romFileStatus = "Same";
                 }
                 else
                 {
                     std::wstring sha1W = Utf8ToWide(sha1);
                     finalName = L"[other_" + sha1W + L"]" + finalName;
+                romFileStatus = "Other";
                 }
             }
             else
@@ -3270,7 +3391,16 @@ int ProcessROMRead(const wchar_t* outputFileArg, bool autoFileNameMode)
             finalOutputPath = JoinPath(finalDir, finalName);
         }
 
-        if (!SaveROMToFile(finalOutputPath.c_str(), romData, romInfo.romSize))
+        else
+
+        {
+
+            if (!IsSuccessfulROMImage(romData, romInfo.romSize))
+                romFileStatus = "Unsuccessful";
+
+        }
+
+if (!SaveROMToFile(finalOutputPath.c_str(), romData, romInfo.romSize))
         {
             printf("[ERROR] File save failed\n");
             free(romData);
@@ -3279,11 +3409,40 @@ int ProcessROMRead(const wchar_t* outputFileArg, bool autoFileNameMode)
             continue;
         }
 
+        if (logMode)
+        {
+            std::string dbStatus = (dbInfo.found ? "MATCH" : "Unknown");
+            std::string title = dbInfo.title;
+            std::string company = dbInfo.company;
+            std::string year = dbInfo.year;
+            std::string system = dbInfo.system;
+            std::string romType = (romInfo.mapperName ? romInfo.mapperName : "Unknown");
+            std::string dumpDateTime = GetCurrentDateTimeString();
+            std::string status = dbInfo.status;
+            std::string remark = dbInfo.remark;
+
+
+            if (!AppendDumpListLogCsv(  outputDir, 
+                    dbStatus,
+                    romFileStatus, 
+                    status, title, 
+                    company, 
+                    year, 
+                    system, 
+                    remark, 
+                    romType, 
+                    romInfo.romSize, 
+                    sha1, 
+                    dumpDateTime))
+            {
+                printf("WARNING: Failed to append dump_list_log.csv\n");
+            }
+        }
+        
         wprintf(L"\nSaved output: %s\n", finalOutputPath.c_str());
         printf("\nROM read and save completed successfully!\n\n");
 
         SlotPowerOff(hSerial);
-
 
         free(romData);
         CloseHandle(hSerial);
@@ -3317,6 +3476,7 @@ int wmain(int argc, wchar_t* argv[])
     printf("\n");
 
     bool autoFileNameMode = false;
+    bool logMode = false;
     const wchar_t* outputFileArg = NULL;
 
     for (int i = 1; i < argc; i++)
@@ -3325,9 +3485,14 @@ int wmain(int argc, wchar_t* argv[])
         {
             autoFileNameMode = true;
         }
+        else if (_wcsicmp(argv[i], L"/log") == 0)
+        {
+            logMode = true;
+        }
         else
         {
             outputFileArg = argv[i];
+
         }
     }
 
@@ -3335,16 +3500,20 @@ int wmain(int argc, wchar_t* argv[])
     // /auto 時は引数省略ならカレントディレクトリを使う
     if (!autoFileNameMode && outputFileArg == NULL)
     {
-        wprintf(L"Usage: %s <output_file_path> [/auto]\n", argv[0]);
+        wprintf(L"Usage: %s <output_file_path> [/auto] [/log]\n", argv[0]);
         wprintf(L"\n");
         wprintf(L"Normal mode:\n");
-        wprintf(L"  %s <output_file_path>\n", argv[0]);
+        wprintf(L"  %s <output_file_path> [/log]\n", argv[0]);
         wprintf(L"    Save ROM using the specified output file path.\n");
         wprintf(L"\n");
+        wprintf(L"    /log option appends dump information to dump_list_log.csv.\n");
+        wprintf(L"\n");
         wprintf(L"Auto file name mode:\n");
-        wprintf(L"  %s /auto [output_directory]\n", argv[0]);
+        wprintf(L"  %s /auto [output_directory]  [/log]\n", argv[0]);
         wprintf(L"    Save ROM using an automatically generated file name.\n");
         wprintf(L"    If [output_directory] is omitted, the current directory is used.\n");
+        wprintf(L"\n");
+        wprintf(L"    /log option appends dump information to dump_list_log.csv.\n");
         wprintf(L"\n");
         wprintf(L"Notes:\n");
         wprintf(L"  softwaredb.xml is used if present.\n");
@@ -3352,8 +3521,8 @@ int wmain(int argc, wchar_t* argv[])
         return 1;
     }
 
-    int result = ProcessROMRead(outputFileArg, autoFileNameMode);
-
+    int result = ProcessROMRead(outputFileArg, autoFileNameMode, logMode);
     printf("Done.\n");
     return result;
 }
+
