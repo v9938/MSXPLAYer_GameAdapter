@@ -30,6 +30,7 @@
 //  26/05/31 v1.40      HVERの表示変更、Megarom Read支援コマンドRMSET/RMRDを追加
 //  26/06/01 v1.41      IOTRのIOアドレス加算の仕様を変更
 //  26/06/01 v1.42      RMRDのBANK指定のバグを修正
+//  26/06/01 v1.43      CDC OUTPUT BUFFERのmutex制御を追加
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -250,6 +251,8 @@ MegaROM_Mapper romMapper ;
 
 // MUTEX
 auto_init_mutex(cmdcount_mutex);
+auto_init_mutex(cdc_output_mutex);
+
 
 // PIO にデータを流すラッパー
 static inline void put_pixel(uint32_t pixel_grb) {
@@ -275,8 +278,6 @@ static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
 //void custom_cdc_task(void);
 void cdc_task(void); // 前方宣言
 
-// ---- CDC出力用Mutex ----
-//static mutex_t usb_task_mutex; // USB 書き込み同期用 (将来的に使用) // 今は初期化のみ
 
 // コマンドリングバッファは commands.h の Command_t を使用 // 実体はここにある
 volatile Command_t commandBufs[CMD_BUF_NUM]; // コマンドキュー配列 // Core0 が書き込み Core1 が読む
@@ -324,6 +325,7 @@ static volatile int cdc_q_count = 0;          // キュー内件数 // 同期注
 // CDCへ文字列出力 + 書式化（64バイト分割出力対応 ※MAX256Byte）
 // Tiny-USBのCDC出力はUSB規格の都合で1回の送信MAXは64Byteそのため分割して送付する。
 void cdc_printf(const char *fmt, ...) {
+
     while (cdc_q_count >= CDC_PRINTF_QSIZE-1) { // キュー満杯なら待機 // ブロッキング挙動
         sleep_ms(1);                             // 少し待って再試行
     }
@@ -338,12 +340,15 @@ void cdc_printf(const char *fmt, ...) {
     cdc_queue[cdc_q_write].binLength = 0;        // テキストモード指定
     cdc_queue[cdc_q_write].valid = true;         // 有効化
     cdc_q_write = (cdc_q_write + 1) % CDC_PRINTF_QSIZE; // 次の書き込み位置へ
+    mutex_enter_blocking(&cdc_output_mutex);  // ロック
     cdc_q_count++;                                // 件数インクリメント
+    mutex_exit(&cdc_output_mutex);  // ロック解除
 }
 
 void cdc_bufOutput(int address,int len) {
     int offset = 0;                              // バッファ送信オフセット // 送信済みバイト数
     int i;
+
 
     while (offset < len) {
         while (cdc_q_count >= CDC_PRINTF_QSIZE-1) { // キュー満杯時待機
@@ -361,9 +366,12 @@ void cdc_bufOutput(int address,int len) {
         cdc_queue[cdc_q_write].binLength = chunk; // バイナリ長を設定
         cdc_queue[cdc_q_write].valid = true;      // 有効化
         cdc_q_write = (cdc_q_write + 1) % CDC_PRINTF_QSIZE; // 次の書き込み位置へ
+        mutex_enter_blocking(&cdc_output_mutex);  // ロック
         cdc_q_count++;                             // 件数インクリメント
+        mutex_exit(&cdc_output_mutex);  // ロック解除
         offset += chunk;                           // オフセット進める
     }
+    
 }
 
 int powerCheck(){
@@ -1968,7 +1976,9 @@ int cmd_romMapperRead(const Command_t* cmd) {
             cdc_queue[cdc_q_write].binLength = chunk; // バイナリ長を設定
             cdc_queue[cdc_q_write].valid = true;      // 有効化
             cdc_q_write = (cdc_q_write + 1) % CDC_PRINTF_QSIZE; // 次の書き込み位置へ
+            mutex_enter_blocking(&cdc_output_mutex);  // ロック
             cdc_q_count++;                             // 件数インクリメント
+            mutex_exit(&cdc_output_mutex);  // ロック解除
             length += chunk;                           // オフセット進める
         }
     }
@@ -2035,7 +2045,7 @@ void core1_entry() {
                     if (strcmp((const char *)commandBufs[read_idx].cmd, cmd_table[i].name)==0) { // コマンド名比較
                         int cmd_err = cmd_table[i].func((const Command_t *)&commandBufs[read_idx]); // 実行
                         if (displayFlag){
-//                            printf("C:%s R:%d %02x %02x\n",commandBufs[read_idx].cmd,cmd_err,slotMem[0],slotMem[1]); //debugd
+//                          printf("C:%s R:%d %02x %02x\n",commandBufs[read_idx].cmd,cmd_err,slotMem[0],slotMem[1]); //debugd
                             if (cmd_err == CMD_OK)  cdc_printf("OK\n"); // 成功表示
                             else if (cmd_err == CMD_FAIL) cdc_printf("FAIL\n"); // 失敗表示
                             else if (cmd_err == CMD_BADPARM) cdc_printf("Bad Parameter\n"); // bad param
@@ -2150,6 +2160,7 @@ void cdc_task(void)
     // 送信TASK
     // CDC出力バッファから実際にUSBに出力
     if ((cdc_q_count > 0) && (cdc_queue[cdc_q_read].valid)) { // キューにデータがあるか
+
         if (outoutMode==false)
         { 
             // Binモード時はLength分送付する
@@ -2165,9 +2176,12 @@ void cdc_task(void)
 
             cdc_queue[cdc_q_read].valid = false;      // 送信済みとして無効化
             cdc_q_read = (cdc_q_read + 1) % CDC_PRINTF_QSIZE; // 次を指す
+            mutex_enter_blocking(&cdc_output_mutex);  // ロック
             cdc_q_count--;                             // 件数デクリメント
+            mutex_exit(&cdc_output_mutex);  // ロック解除
             outoutMode = false;                        // 出力終了
         }
+
     }
 
 }
